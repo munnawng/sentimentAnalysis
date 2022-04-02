@@ -6,6 +6,7 @@
 from datetime import date
 from bs4 import BeautifulSoup
 import requests
+from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast, TextClassificationPipeline
 
 ticker_list = ["TSLA", "NVDA", "AAPL", "AMD", "FB", "AMZN", "MSFT", "BABA", "GOOGL", "GOOG", "TLRY", "OXY", "NIO", "GME", "XOM", "SQ", "MU", "CVX", "INTC", "BAC", "HD"]
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36'}
@@ -87,6 +88,33 @@ def extract_article_data(URL,title):
 
     return article_data
 
+
+def calc_sentiment(pred_dicts):
+    # Takes in the a list of lists of dictionaries containing scores for each label (pos, neg, neutral)
+    # for each article of a given ticker and calculates a total sentiment between -1 and 1
+    # This is confusing but basically the format for 1 article would look like
+    # [[{'label':'LABEL_0', 'score':'0.6897'}, {etc.}]]
+    sum_pos = 0
+    sum_neg = 0
+    n_articles = len(pred_dicts)
+
+    for article in pred_dicts:
+        for dict in article:
+            if '0' in dict['label']:
+                sum_neg += dict['score']
+            elif '2' in dict['label']:
+                sum_pos += dict['score']
+
+    return (sum_pos - sum_neg) / n_articles
+
+
+def predict(list_articles, pipe):
+    # takes in a list of articles and a classification pipeline object
+    # and returns the sentiment calculated using calc_sentiment
+    pred_dicts = pipe(list_articles)
+    return calc_sentiment(pred_dicts)
+
+
 if __name__ == "__main__":
     todays_date = date.today().strftime("%b-%d-%y")
     ticker_articles = {} # key=ticker name, val=list of strings (all news articles for the current day)
@@ -109,5 +137,18 @@ if __name__ == "__main__":
         print("crawled:",ticker)
     
     print(ticker_articles)
+
+    # Model time
+
+    model = DistilBertForSequenceClassification.from_pretrained("BERTModel")
+    tokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
+    pipe = TextClassificationPipeline(model=model, tokenizer=tokenizer, return_all_scores=True)
+
+    sentiments = {}
+
+    for ticker in ticker_articles.keys():
+        sent_score = predict(ticker_articles[ticker], pipe)
+        print(ticker, sent_score)
+        sentiments[ticker] = sent_score
 
 # END MAIN
