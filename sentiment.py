@@ -10,7 +10,13 @@ from transformers import DistilBertForSequenceClassification, DistilBertTokenize
 
 app = Flask(__name__)
 
-ticker_list = ["TSLA", "NVDA", "AAPL", "AMD", "FB", "AMZN", "MSFT", "BABA", "GOOGL", "GOOG", "TLRY", "OXY", "NIO", "GME", "XOM", "SQ", "MU", "CVX", "INTC", "BAC", "HD", "M"]
+ticker_list = ["AAPL", "AMD", "AMZN", "BABA", "FB", "XOM", "CVX", "CLR", "EQT", "PXD", "WMT", "TGT", "GME", "COST", "LULU", "BAC", "JPM", "GS", "COF", "WFC"]
+tickers = {
+    "Technology": {"AAPL", "AMD", "AMZN", "BABA", "FB"},
+    "Energy": {"XOM", "CVX", "CLR", "EQT", "PXD"},
+    "Retail": {"WMT", "TGT", "GME", "COST", "LULU"},
+    "Finance": {"BAC", "JPM", "GS", "COF", "FNMA"}
+}
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36'}
 
 # Parses through the html and extracts links in the id="news-table" 
@@ -113,7 +119,10 @@ def predict(list_articles, pipe):
     # takes in a list of articles and a classification pipeline object
     # and returns the sentiment calculated using calc_sentiment
     pred_dicts = pipe(list_articles)
-    return calc_sentiment(pred_dicts)
+    if len(pred_dicts) > 0:
+        return calc_sentiment(pred_dicts)
+    else:
+        return 0
 
 @app.route("/")
 def return_sentiment():
@@ -151,10 +160,59 @@ def return_sentiment():
         print(ticker, sent_score)
         sentiments[ticker] = sent_score
 
-    return sentiments
+    return_data = {
+        "Technology": {
+            "avgScore": 0,
+            "bestTitle": "",
+            "worstTitle": "",
+            "stocks": {
+
+            }
+        },
+        "Energy": {
+            "avgScore": 0,
+            "bestTitle": "",
+            "worstTitle": "",
+            "stocks": {
+
+            }
+        },
+        "Retail": {
+            "avgScore": 0,
+            "bestTitle": "",
+            "worstTitle": "",
+            "stocks": {
+
+            }
+        },
+        "Finance": {
+            "avgScore": 0,
+            "bestTitle": "",
+            "worstTitle": "",
+            "stocks": {
+
+            }
+        }
+    }
+    for stock in sentiments:
+        if stock in tickers["Technology"]:
+            return_data["Technology"]["stocks"][stock] = sentiments[stock]
+        elif stock in tickers["Energy"]:
+            return_data["Energy"]["stocks"][stock] = sentiments[stock]
+        elif stock in tickers["Retail"]:
+            return_data["Retail"]["stocks"][stock] = sentiments[stock]
+        else:
+            return_data["Finance"]["stocks"][stock] = sentiments[stock]
+
+
+
+
+    return return_data
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    #app.run()
+    res = return_sentiment()
+    print("here")
 
 # END MAIN
