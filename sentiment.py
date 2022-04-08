@@ -2,13 +2,15 @@
 # EECS 486 final project
 
 # usage: python sentiment.py
-
+from flask import Flask
 from datetime import date
 from bs4 import BeautifulSoup
 import requests
 from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast, TextClassificationPipeline
 
-ticker_list = ["TSLA", "NVDA", "AAPL", "AMD", "FB", "AMZN", "MSFT", "BABA", "GOOGL", "GOOG", "TLRY", "OXY", "NIO", "GME", "XOM", "SQ", "MU", "CVX", "INTC", "BAC", "HD"]
+app = Flask(__name__)
+
+ticker_list = ["TSLA", "NVDA", "AAPL", "AMD", "FB", "AMZN", "MSFT", "BABA", "GOOGL", "GOOG", "TLRY", "OXY", "NIO", "GME", "XOM", "SQ", "MU", "CVX", "INTC", "BAC", "HD", "M"]
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36'}
 
 # Parses through the html and extracts links in the id="news-table" 
@@ -107,17 +109,16 @@ def calc_sentiment(pred_dicts):
 
     return (sum_pos - sum_neg) / n_articles
 
-
 def predict(list_articles, pipe):
     # takes in a list of articles and a classification pipeline object
     # and returns the sentiment calculated using calc_sentiment
     pred_dicts = pipe(list_articles)
     return calc_sentiment(pred_dicts)
 
-
-if __name__ == "__main__":
+@app.route("/")
+def return_sentiment():
     todays_date = date.today().strftime("%b-%d-%y")
-    ticker_articles = {} # key=ticker name, val=list of strings (all news articles for the current day)
+    ticker_articles = {}  # key=ticker name, val=list of strings (all news articles for the current day)
     finviz_url = "https://finviz.com/quote.ashx?t="
     # Start traversal with seed from file_with_seedURLs(https://eecs.engin.umich.edu/).
 
@@ -125,21 +126,20 @@ if __name__ == "__main__":
     session.max_redirects = 4
     for ticker in ticker_list:
         ticker_articles[ticker] = []
-        
+
         try:
-            r = session.get(finviz_url+ticker, headers = headers, timeout = 3)
+            r = session.get(finviz_url + ticker, headers=headers, timeout=3)
         except:
             print('ERROR: Web site does not exist or too many redirects or timeout')
             continue
 
         html = BeautifulSoup(r.content, features='html.parser')
         ticker_articles = find_ticker_info(ticker, html, ticker_articles, todays_date)
-        print("crawled:",ticker)
-    
+        print("crawled:", ticker)
+
     print(ticker_articles)
 
     # Model time
-
     model = DistilBertForSequenceClassification.from_pretrained("BERTModel")
     tokenizer = DistilBertTokenizerFast.from_pretrained('distilbert-base-uncased')
     pipe = TextClassificationPipeline(model=model, tokenizer=tokenizer, return_all_scores=True)
@@ -150,5 +150,11 @@ if __name__ == "__main__":
         sent_score = predict(ticker_articles[ticker], pipe)
         print(ticker, sent_score)
         sentiments[ticker] = sent_score
+
+    return sentiments
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
 
 # END MAIN
