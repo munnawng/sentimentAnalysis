@@ -7,6 +7,7 @@ from datetime import date
 from bs4 import BeautifulSoup
 import requests
 from transformers import DistilBertForSequenceClassification, DistilBertTokenizerFast, TextClassificationPipeline
+from json import dumps, loads
 
 app = Flask(__name__)
 
@@ -15,7 +16,7 @@ tickers = {
     "Technology": {"AAPL", "AMD", "AMZN", "BABA", "FB"},
     "Energy": {"XOM", "CVX", "CLR", "EQT", "PXD"},
     "Retail": {"WMT", "TGT", "GME", "COST", "LULU"},
-    "Finance": {"BAC", "JPM", "GS", "COF", "FNMA"}
+    "Finance": {"BAC", "JPM", "GS", "COF", "WFC"}
 }
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36'}
 
@@ -105,24 +106,36 @@ def calc_sentiment(pred_dicts):
     sum_pos = 0
     sum_neg = 0
     n_articles = len(pred_dicts)
+    best_ind, best_score = -1, 0
+    worst_ind, worst_score = -1, 0
 
-    for article in pred_dicts:
+    if n_articles == 0:
+        return 0, 0, -1, 0, -1, 0
+
+    for n, article in enumerate(pred_dicts):
         for dict in article:
             if '0' in dict['label']:
-                sum_neg += dict['score']
+                neg_score = dict['score']
+                sum_neg += neg_score
             elif '2' in dict['label']:
-                sum_pos += dict['score']
+                pos_score = dict['score']
+                sum_pos += pos_score
 
-    return (sum_pos - sum_neg) / n_articles
+        art_score = pos_score - neg_score
+        if art_score > best_score:
+            best_score = art_score
+            best_ind = n
+        elif art_score < worst_score:
+            worst_score = art_score
+            worst_ind = n
+
+    return (sum_pos - sum_neg), n_articles, best_ind, best_score, worst_ind, worst_score
 
 def predict(list_articles, pipe):
     # takes in a list of articles and a classification pipeline object
     # and returns the sentiment calculated using calc_sentiment
     pred_dicts = pipe(list_articles)
-    if len(pred_dicts) > 0:
-        return calc_sentiment(pred_dicts)
-    else:
-        return 0
+    return calc_sentiment(pred_dicts)
 
 @app.route("/")
 def return_sentiment():
@@ -160,40 +173,73 @@ def return_sentiment():
         print(ticker, sent_score)
         sentiments[ticker] = sent_score
 
-    return_data = {
-        "Technology": {
-            "avgScore": 0,
-            "bestTitle": "",
-            "worstTitle": "",
-            "stocks": {
+    industry_dict = {}
 
-            }
-        },
-        "Energy": {
-            "avgScore": 0,
-            "bestTitle": "",
-            "worstTitle": "",
-            "stocks": {
+    # converting sentiment info by article to by stock
+    for industry in tickers.keys():
+        industry_dict[industry] = {"avgScore":0, "stocks":{}}
+        sum_score, sum_articles = 0.0, 0
+        best_art, best_score, worst_art, worst_score = "", 0, "", 0
 
-            }
-        },
-        "Retail": {
-            "avgScore": 0,
-            "bestTitle": "",
-            "worstTitle": "",
-            "stocks": {
+        for stock in tickers[industry]:
+            sum_score += sentiments[stock][0]
+            sum_articles += sentiments[stock][1]
+            if sentiments[stock][1] == 0:
+                industry_dict[industry]["stocks"][stock] = 0
+            else:
+                industry_dict[industry]["stocks"][stock] = sentiments[stock][0] / sentiments[stock][1]
 
-            }
-        },
-        "Finance": {
-            "avgScore": 0,
-            "bestTitle": "",
-            "worstTitle": "",
-            "stocks": {
+            if sentiments[stock][3] > best_score:
+                # absolute spaghetti but this should get the article for stock w/ highest sentiment
+                best_art = ticker_articles[stock][sentiments[stock][2]]
+                best_score = sentiments[stock][3]
+            if sentiments[stock][5] < worst_score:
+                worst_art = ticker_articles[stock][sentiments[stock][4]]
+                worst_score = sentiments[stock][5]
 
-            }
-        }
-    }
+        industry_dict[industry]["bestTitle"] = best_art
+        industry_dict[industry]["worstTitle"] = worst_art
+        if sum_articles > 0:
+            industry_dict[industry]["avgScore"] = sum_score / sum_articles
+
+    # return_data = {
+    #     "Technology": {
+    #         "avgScore": 0,
+    #         "bestTitle": "",
+    #         "worstTitle": "",
+    #         "stocks": {
+    #
+    #         }
+    #     },
+    #     "Energy": {
+    #         "avgScore": 0,
+    #         "bestTitle": "",
+    #         "worstTitle": "",
+    #         "stocks": {
+    #
+    #         }
+    #     },
+    #     "Retail": {
+    #         "avgScore": 0,
+    #         "bestTitle": "",
+    #         "worstTitle": "",
+    #         "stocks": {
+    #
+    #         }
+    #     },
+    #     "Finance": {
+    #         "avgScore": 0,
+    #         "bestTitle": "",
+    #         "worstTitle": "",
+    #         "stocks": {
+    #
+    #         }
+    #     }
+    # }
+    return_data = dumps(industry_dict)
+    return_data = loads(return_data)
+    print(return_data)
+
     for stock in sentiments:
         if stock in tickers["Technology"]:
             return_data["Technology"]["stocks"][stock] = sentiments[stock]
